@@ -1,0 +1,26 @@
+id,name,logo_url,description,website,industry,employee_count,founded_year,city_id,created_at,updated_at
+1,Türk Telekom,,Türkiye'nin lider telekomünikasyon şirketi,https://www.turktelekom.com.tr,Telekomünikasyon,10000+,1995,1,2024-01-01 00:00:00+00,2024-01-01 00:00:00+00
+2,Garanti BBVA,,Türkiye'nin önde gelen özel bankalarından biri,https://www.garantibbva.com.tr,Bankacılık,5000-10000,1946,1,2024-01-01 00:00:00+00,2024-01-01 00:00:00+00
+3,Arçelik,,Beyaz eşya ve elektronik üreticisi,https://www.arcelik.com.tr,Üretim,5000-10000,1955,1,2024-01-01 00:00:00+00,2024-01-01 00:00:00+00
+4,Trendyol,,Türkiye'nin en büyük e-ticaret platformu,https://www.trendyol.com,E-ticaret,1000-5000,2010,1,2024-01-01 00:00:00+00,2024-01-01 00:00:00+00
+5,Getir,,Hızlı teslimat uygulaması,https://www.getir.com,Teknoloji,1000-5000,2015,1,2024-01-01 00:00:00+00,2024-01-01 00:00:00+00
+6,Hepsiburada,,Online alışveriş platformu,https://www.hepsiburada.com,E-ticaret,1000-5000,2000,1,2024-01-01 00:00:00+00,2024-01-01 00:00:00+00
+7,Akbank,,Türkiye'nin önde gelen özel bankalarından biri,https://www.akbank.com,Bankacılık,5000-10000,1948,1,2024-01-01 00:00:00+00,2024-01-01 00:00:00+00
+8,Sabancı Holding,,Türkiye'nin en büyük holdinglerinden biri,https://www.sabanci.com,Holding,10000+,1967,1,2024-01-01 00:00:00+00,2024-01-01 00:00:00+00
+9,Koç Holding,,Türkiye'nin en büyük sanayi ve hizmet grubu,https://www.koc.com.tr,Holding,10000+,1963,1,2024-01-01 00:00:00+00,2024-01-01 00:00:00+00
+10,Migros,,Perakende zinciri,https://www.migros.com.tr,Perakende,5000-10000,1954,1,2024-01-01 00:00:00+00,2024-01-01 00:00:00+00
+11,Turkcell,,Türkiye'nin lider mobil operatörü,https://www.turkcell.com.tr,Telekomünikasyon,5000-10000,1994,1,2024-01-01 00:00:00+00,2024-01-01 00:00:00+00
+12,İş Bankası,,Türkiye'nin en büyük özel bankası,https://www.isbank.com.tr,Bankacılık,10000+,1924,2,2024-01-01 00:00:00+00,2024-01-01 00:00:00+00
+13,Anadolu Efes,,Bira ve alkolsüz içecek üreticisi,https://www.anadoluefes.com,İçecek,1000-5000,1969,1,2024-01-01 00:00:00+00,2024-01-01 00:00:00+00
+14,Ülker,,Gıda ve bisküvi üreticisi,https://www.ulker.com.tr,Gıda,5000-10000,1944,1,2024-01-01 00:00:00+00,2024-01-01 00:00:00+00
+15,Pegasus,,Düşük maliyetli havayolu şirketi,https://www.flypgs.com,Havacılık,1000-5000,1990,1,2024-01-01 00:00:00+00,2024-01-01 00:00:00+00
+16,Turkish Airlines,,Türkiye'nin bayrak taşıyıcı havayolu,https://www.turkishairlines.com,Havacılık,10000+,1933,1,2024-01-01 00:00:00+00,2024-01-01 00:00:00+00
+17,Yapı Kredi,,Özel banka,https://www.yapikredi.com.tr,Bankacılık,5000-10000,1944,1,2024-01-01 00:00:00+00,2024-01-01 00:00:00+00
+18,Vodafone Türkiye,,Mobil operatör,https://www.vodafone.com.tr,Telekomünikasyon,1000-5000,2006,1,2024-01-01 00:00:00+00,2024-01-01 00:00:00+00
+19,BİM,,İndirimli market zinciri,https://www.bim.com.tr,Perakende,10000+,1995,1,2024-01-01 00:00:00+00,2024-01-01 00:00:00+00
+20,A101,,İndirimli market zinciri,https://www.a101.com.tr,Perakende,5000-10000,2008,1,2024-01-01 00:00:00+00,2024-01-01 00:00:00+00
+21,Ziraat Bankası,,Türkiye'nin en eski bankası,https://www.ziraatbank.com.tr,Bankacılık,10000+,1863,2,2024-01-01 00:00:00+00,2024-01-01 00:00:00+00
+22,Halkbank,,Kamu bankası,https://www.halkbank.com.tr,Bankacılık,10000+,1938,2,2024-01-01 00:00:00+00,2024-01-01 00:00:00+00
+23,TAV,,Havalimanı işletmecisi,https://www.tav.aero,Havacılık,1000-5000,1997,1,2024-01-01 00:00:00+00,2024-01-01 00:00:00+00
+24,Enka,,İnşaat ve mühendislik,https://www.enka.com,İnşaat,1000-5000,1957,1,2024-01-01 00:00:00+00,2024-01-01 00:00:00+00
+25,Doğuş Grubu,,Holding şirketi,https://www.dogusgrubu.com.tr,Holding,5000-10000,1951,1,2024-01-01 00:00:00+00,2024-01-01 00:00:00+00
