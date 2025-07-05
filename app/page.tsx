@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { motion } from "framer-motion"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -30,9 +30,11 @@ import {
 import { supabase } from "@/lib/supabase"
 import { useRouter } from "next/navigation"
 import Navigation from "@/components/navigation"
+import { useSearchParams } from "next/navigation"
 
 interface Post {
   id: string
+  user_id: string // eklendi
   content: string
   image_url?: string
   video_url?: string
@@ -46,6 +48,7 @@ interface Post {
 
 interface Comment {
   id: string
+  user_id: string // eklendi
   content: string
   created_at: string
   users: {
@@ -77,6 +80,12 @@ export default function Home() {
   const [showComments, setShowComments] = useState<Record<string, boolean>>({})
   const [showDeleteDialog, setShowDeleteDialog] = useState<string | null>(null)
   const router = useRouter()
+  const [showUsernameModal, setShowUsernameModal] = useState(false)
+  const [usernameInput, setUsernameInput] = useState("")
+  const [usernameError, setUsernameError] = useState("")
+  const usernameInputRef = useRef<HTMLInputElement>(null)
+  const searchParams = useSearchParams();
+  const [currentUsername, setCurrentUsername] = useState<string>("");
 
   // Close delete dialog when clicking outside
   useEffect(() => {
@@ -99,6 +108,56 @@ export default function Home() {
       fetchPosts()
     }
   }, [user])
+
+  // Username kontrolü ve modal açma
+  useEffect(() => {
+    if (user) {
+      (async () => {
+        const { data: userRow } = await supabase.from("users").select("username").eq("id", user.id).single()
+        if (!userRow || !userRow.username || userRow.username.startsWith("user_")) {
+          setShowUsernameModal(true)
+        } else {
+          setShowUsernameModal(false)
+        }
+      })()
+    }
+  }, [user])
+
+  // Eğer e-mail confirmation sonrası gelindiyse giriş tabına yönlendir
+  useEffect(() => {
+    const type = searchParams.get("type");
+    if (type === "signup") {
+      // Giriş tabını aktif et
+      const signinTab = document.querySelector('[value="signin"]') as HTMLElement;
+      if (signinTab) {
+        signinTab.click();
+      }
+    }
+  }, [searchParams]);
+
+  // Username kaydetme fonksiyonu
+  const handleSaveUsername = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setUsernameError("")
+    const username = usernameInput.trim()
+    if (!username) {
+      setUsernameError("Kullanıcı adı zorunlu!")
+      return
+    }
+    // Unique kontrolü
+    const { data: exists } = await supabase.from("users").select("id").eq("username", username).single()
+    if (exists) {
+      setUsernameError("Bu kullanıcı adı zaten alınmış!")
+      return
+    }
+    // Güncelle
+    const { error } = await supabase.from("users").update({ username }).eq("id", user.id)
+    if (error) {
+      setUsernameError("Kullanıcı adı kaydedilemedi!")
+      return
+    }
+    setShowUsernameModal(false)
+  }
 
   const checkUser = async () => {
     console.log('Checking user...')
@@ -180,6 +239,9 @@ export default function Home() {
         }
         
         fetchUserStats(user.id)
+        // Username'i kendi tablomuzdan çek
+        const { data: userRow } = await supabase.from("users").select("username").eq("id", user.id).single();
+        setCurrentUsername(userRow?.username || "");
       } else {
         console.log('No user found')
       }
@@ -218,7 +280,7 @@ export default function Home() {
     try {
       const { data, error } = await supabase
         .from("posts")
-        .select(`*, users (username)`)
+        .select(`*, user_id, users (username)`)
         .order("created_at", { ascending: false })
         .limit(20)
       if (error) throw error
@@ -248,22 +310,29 @@ export default function Home() {
 
   const likePost = async (postId: string) => {
     if (!user) return
+    console.log("Like atılıyor:", { postId, userId: user.id });
     try {
-      const { data: existingLike } = await supabase
+      const { data: existingLike, error: selectError } = await supabase
         .from("likes")
         .select("id")
         .eq("post_id", postId)
         .eq("user_id", user.id)
-        .single()
+        .maybeSingle()
+      console.log("Like select sonucu:", { existingLike, selectError });
+
       if (existingLike) {
-        await supabase.from("likes").delete().eq("post_id", postId).eq("user_id", user.id)
+        const { error: deleteError, data: deleteData } = await supabase.from("likes").delete().eq("post_id", postId).eq("user_id", user.id)
+        console.log("Like silme sonucu:", { deleteError, deleteData });
+        if (deleteError) console.error("Like delete error:", deleteError);
       } else {
-        await supabase.from("likes").insert([
+        const { error: insertError, data: insertData } = await supabase.from("likes").insert([
           {
             post_id: postId,
             user_id: user.id,
           },
         ])
+        console.log("Like ekleme sonucu:", { insertError, insertData });
+        if (insertError) console.error("Like insert error:", insertError);
       }
       fetchPosts()
     } catch (error) {
@@ -286,7 +355,7 @@ export default function Home() {
     try {
       const { data, error } = await supabase
         .from("comments")
-        .select(`*, users (username)`)
+        .select(`*, user_id, users (username)`)
         .eq("post_id", postId)
         .order("created_at", { ascending: true })
       if (error) throw error
@@ -375,16 +444,6 @@ export default function Home() {
     } else if (formData.password.length < 6) {
       newErrors.password = "Şifre en az 6 karakter olmalı"
     }
-    if (isSignUp) {
-      if (!formData.username) {
-        newErrors.username = "Kullanıcı adı gerekli"
-      } else if (formData.username.length < 3) {
-        newErrors.username = "Kullanıcı adı en az 3 karakter olmalı"
-      }
-      if (formData.password !== formData.confirmPassword) {
-        newErrors.confirmPassword = "Şifreler eşleşmiyor"
-      }
-    }
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
   }
@@ -400,9 +459,6 @@ export default function Home() {
         email: formData.email,
         password: formData.password,
         options: {
-          data: {
-            username: formData.username,
-          },
           emailRedirectTo: `${window.location.origin}/`,
         },
       })
@@ -515,6 +571,22 @@ export default function Home() {
     },
   ]
 
+  // Yorum silme fonksiyonu (doğru scope'ta, Home fonksiyonunun içinde ve JSX'ten önce)
+  const deleteComment = async (commentId: string) => {
+    if (!user) return;
+    try {
+      await supabase.from("comments").delete().eq("id", commentId).eq("user_id", user.id);
+      // Yorumun ait olduğu postu bul ve tekrar fetch et
+      Object.keys(comments).forEach(postId => {
+        if (comments[postId]?.some((c: any) => c.id === commentId)) {
+          fetchComments(postId);
+        }
+      });
+    } catch (error) {
+      console.error("Error deleting comment:", error);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-50 to-pink-50 flex items-center justify-center">
@@ -600,34 +672,22 @@ export default function Home() {
                   <TabsContent value="signup" className="space-y-4">
                     <form onSubmit={handleSignUp} className="space-y-4">
                       <div className="space-y-2">
-                        <Label htmlFor="signup-username">Kullanıcı Adı</Label>
-                          <Input id="signup-username" name="username" placeholder="kullaniciadi" value={formData.username} onChange={handleInputChange} className={errors.username ? "border-red-500" : ""} />
-                        {errors.username && <p className="text-sm text-red-500">{errors.username}</p>}
-                      </div>
-                      <div className="space-y-2">
                         <Label htmlFor="signup-email">E-posta</Label>
-                          <Input id="signup-email" name="email" type="email" placeholder="ornek@email.com" value={formData.email} onChange={handleInputChange} className={errors.email ? "border-red-500" : ""} />
+                        <Input id="signup-email" name="email" type="email" placeholder="ornek@email.com" value={formData.email} onChange={handleInputChange} className={errors.email ? "border-red-500" : ""} />
                         {errors.email && <p className="text-sm text-red-500">{errors.email}</p>}
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="signup-password">Şifre</Label>
                         <div className="relative">
-                            <Input id="signup-password" name="password" type={showPassword ? "text" : "password"} placeholder="••••••••" value={formData.password} onChange={handleInputChange} className={errors.password ? "border-red-500" : ""} />
-                            <Button type="button" variant="ghost" size="sm" className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent" onClick={() => setShowPassword(!showPassword)}>
+                          <Input id="signup-password" name="password" type={showPassword ? "text" : "password"} placeholder="••••••••" value={formData.password} onChange={handleInputChange} className={errors.password ? "border-red-500" : ""} />
+                          <Button type="button" variant="ghost" size="sm" className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent" onClick={() => setShowPassword(!showPassword)}>
                             {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                           </Button>
                         </div>
                         {errors.password && <p className="text-sm text-red-500">{errors.password}</p>}
                       </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="confirm-password">Şifre Tekrar</Label>
-                          <Input id="confirm-password" name="confirmPassword" type="password" placeholder="••••••••" value={formData.confirmPassword} onChange={handleInputChange} className={errors.confirmPassword ? "border-red-500" : ""} />
-                        {errors.confirmPassword && <p className="text-sm text-red-500">{errors.confirmPassword}</p>}
-                      </div>
-                      {errors.general && <p className="text-sm text-red-500">{errors.general}</p>}
-                        <Button type="submit" className="w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600" disabled={authLoading}>
-                          {authLoading ? "Kayıt oluşturuluyor..." : "Kayıt Ol"}
-                      </Button>
+                      {errors.general && <p className="text-sm text-red-500 text-center mt-2">{errors.general}</p>}
+                        <Button type="submit" className="w-full" disabled={authLoading}>{authLoading ? "Kayıt Olunuyor..." : "Kayıt Ol"}</Button>
                     </form>
                   </TabsContent>
                 </Tabs>
@@ -638,6 +698,32 @@ export default function Home() {
         </div>
       </div>
     )
+  }
+
+  // Username modalı
+  if (showUsernameModal) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60">
+        <form onSubmit={handleSaveUsername} className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md flex flex-col gap-5 border border-purple-100">
+          <div className="flex flex-col items-center gap-2 mb-2">
+            <span className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 text-white text-3xl font-bold shadow-lg mb-2">
+              <svg xmlns='http://www.w3.org/2000/svg' className='h-8 w-8' fill='none' viewBox='0 0 24 24' stroke='currentColor'><path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} d='M5.121 17.804A13.937 13.937 0 0112 15c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0z' /></svg>
+            </span>
+            <h2 className="text-2xl font-bold text-gray-800">Kullanıcı Adı Belirle</h2>
+            <p className="text-gray-500 text-center text-sm max-w-xs">Anonim bir kullanıcı adı koymak sitede rahatça fikirlerinizi paylaşmanıza olanak sağlar. <b>Sadece bir öneri :)</b></p>
+          </div>
+          <Input
+            ref={usernameInputRef}
+            value={usernameInput}
+            onChange={e => setUsernameInput(e.target.value)}
+            placeholder="Kullanıcı adınızı girin"
+            className={usernameError ? "border-red-500" : ""}
+          />
+          {usernameError && <p className="text-sm text-red-500">{usernameError}</p>}
+          <Button type="submit" className="bg-gradient-to-r from-purple-500 to-pink-500 text-white font-semibold py-2 rounded-lg shadow hover:from-purple-600 hover:to-pink-600 transition">Kaydet</Button>
+        </form>
+      </div>
+    );
   }
 
   // Kullanıcı giriş yaptıysa sosyal akışı göster
@@ -690,7 +776,7 @@ export default function Home() {
                   <AvatarFallback className="bg-gradient-to-r from-purple-500 to-pink-500 text-white">{user?.user_metadata?.username?.[0]?.toUpperCase() || "U"}</AvatarFallback>
                 </Avatar>
                 <div>
-                  <p className="font-semibold">{user?.user_metadata?.username || "Kullanıcı"}</p>
+                  <p className="font-semibold">{currentUsername || "Kullanıcı"}</p>
                   <p className="text-sm text-gray-500">Bir şeyler paylaş...</p>
                 </div>
               </div>
@@ -733,30 +819,33 @@ export default function Home() {
                         <p className="text-sm text-gray-500">{formatDate(post.created_at)}</p>
                       </div>
                     </div>
-                    <div className="relative">
-                      <Button variant="ghost" size="sm" onClick={(e) => {
-                        e.stopPropagation()
-                        setShowDeleteDialog(post.id)
-                      }}>
-                        <MoreHorizontal className="h-4 w-4" />
-                      </Button>
-                      {showDeleteDialog === post.id && (
-                        <div className="absolute right-0 top-8 bg-white border rounded-lg shadow-lg p-2 z-10">
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              deletePost(post.id)
-                            }}
-                            className="text-red-600 hover:text-red-700 hover:bg-red-50 w-full justify-start"
-                          >
-                            <Trash2 className="h-4 w-4 mr-2" />
-                            Sil
-                          </Button>
-                        </div>
-                      )}
-                    </div>
+                    {/* Sadece kendi postuysa sil butonunu göster */}
+                    {user && post.user_id === user.id && (
+                      <div className="relative">
+                        <Button variant="ghost" size="sm" onClick={(e) => {
+                          e.stopPropagation()
+                          setShowDeleteDialog(post.id)
+                        }}>
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                        {showDeleteDialog === post.id && (
+                          <div className="absolute right-0 top-8 bg-white border rounded-lg shadow-lg p-2 z-10">
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                deletePost(post.id)
+                              }}
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50 w-full justify-start"
+                            >
+                              <Trash2 className="h-4 w-4 mr-2" />
+                              Sil
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </CardHeader>
                 <CardContent className="pt-0">
@@ -796,6 +885,12 @@ export default function Home() {
                               <div className="flex items-center space-x-2">
                                 <p className="font-semibold text-sm">{comment.users.username}</p>
                                 <p className="text-xs text-gray-500">{formatDate(comment.created_at)}</p>
+                                {/* Sadece kendi yorumunsa sil butonunu göster */}
+                                {user && comment.user_id === user.id && (
+                                  <Button variant="ghost" size="icon" className="text-red-500 hover:bg-red-50 ml-2" onClick={() => deleteComment(comment.id)}>
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                )}
                               </div>
                               <p className="text-sm text-gray-700 mt-1">{comment.content}</p>
                             </div>

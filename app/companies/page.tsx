@@ -116,7 +116,11 @@ export default function CompaniesPage() {
   )
 
   const handleCompanyClick = (companyId: number) => {
-    router.push(`/companies/${companyId}`)
+    if (!hasReviewed) {
+      router.push(`/review-form?company=${companyId}`)
+    } else {
+      router.push(`/companies/${companyId}`)
+    }
   }
 
   if (isLoading) {
