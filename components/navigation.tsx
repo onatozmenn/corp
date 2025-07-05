@@ -18,6 +18,7 @@ import Link from "next/link"
 
 export default function Navigation() {
   const [user, setUser] = useState<any>(null)
+  const [usersUsername, setUsersUsername] = useState("");
   const router = useRouter()
   const pathname = usePathname()
 
@@ -31,12 +32,16 @@ export default function Navigation() {
       data: { user },
     } = await supabase.auth.getUser()
     setUser(user)
+    if (user) {
+      const { data: userRow } = await supabase.from("users").select("username").eq("id", user.id).single();
+      setUsersUsername(userRow?.username || "");
+    }
   }
 
   const handleSignOut = async () => {
-
     await supabase.auth.signOut()
-    router.push("/")
+    router.replace("/")
+    window.location.reload()
   }
 
   const navItems = [
@@ -93,7 +98,7 @@ export default function Navigation() {
                   <Avatar className="h-8 w-8">
                     <AvatarImage src="/placeholder.svg?height=32&width=32" />
                     <AvatarFallback className="bg-gradient-to-r from-purple-500 to-pink-500 text-white">
-                      {user?.user_metadata?.username?.[0]?.toUpperCase() || "U"}
+                      {(usersUsername?.[0] || "U").toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
                 </Button>
@@ -101,12 +106,12 @@ export default function Navigation() {
               <DropdownMenuContent className="w-56" align="end" forceMount>
                 <DropdownMenuLabel className="font-normal">
                   <div className="flex flex-col space-y-1">
-                    <p className="text-sm font-medium leading-none">{user?.user_metadata?.username || "Kullanıcı"}</p>
+                    <p className="text-sm font-medium leading-none">{usersUsername || "Kullanıcı"}</p>
                     <p className="text-xs leading-none text-muted-foreground">{user?.email}</p>
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem>
+                <DropdownMenuItem onClick={() => router.push("/profile")}>
                   <User className="mr-2 h-4 w-4" />
                   <span>Profil</span>
                 </DropdownMenuItem>

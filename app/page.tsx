@@ -86,6 +86,7 @@ export default function Home() {
   const usernameInputRef = useRef<HTMLInputElement>(null)
   const searchParams = useSearchParams();
   const [currentUsername, setCurrentUsername] = useState<string>("");
+  const [usersUsername, setUsersUsername] = useState("");
 
   // Close delete dialog when clicking outside
   useEffect(() => {
@@ -242,6 +243,7 @@ export default function Home() {
         // Username'i kendi tablomuzdan çek
         const { data: userRow } = await supabase.from("users").select("username").eq("id", user.id).single();
         setCurrentUsername(userRow?.username || "");
+        setUsersUsername(userRow?.username || "");
       } else {
         console.log('No user found')
       }
@@ -738,7 +740,7 @@ export default function Home() {
               <div className="flex items-center justify-between">
                 <div>
                   <h1 className="text-2xl font-bold mb-2">
-                    Hoş geldin, {user?.user_metadata?.username || "Kullanıcı"}! 👋
+                    Hoş geldin, {usersUsername || "Kullanıcı"}! 👋
                   </h1>
                   <p className="text-white/90">Bugün hangi deneyimini paylaşmak istiyorsun?</p>
                 </div>
