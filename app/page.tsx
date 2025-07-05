@@ -101,68 +101,95 @@ export default function Home() {
   }, [user])
 
   const checkUser = async () => {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-    
-    if (user) {
-      // Check if user exists in users table, if not create it
-      const { data: existingUser } = await supabase
-        .from("users")
-        .select("id")
-        .eq("id", user.id)
-        .single()
+    console.log('Checking user...')
+    try {
+      const {
+        data: { user },
+        error: userError
+      } = await supabase.auth.getUser()
       
-      if (!existingUser) {
-        // Create user record if it doesn't exist
-        const { error: userError } = await supabase
+      console.log('User check result:', { user, userError })
+      
+      if (userError) {
+        console.error('Error getting user:', userError)
+      }
+      
+      if (user) {
+        console.log('User found:', user)
+        
+        // Check if user exists in users table, if not create it
+        const { data: existingUser, error: existingUserError } = await supabase
           .from("users")
-          .insert([
-            {
-              id: user.id,
-              email: user.email,
-              username: user.user_metadata?.username || `user_${user.id.substring(0, 8)}`,
-              password_hash: `placeholder_hash_${user.id}`, // Placeholder since we don't have actual password
-              created_at: user.created_at,
-              updated_at: user.updated_at,
-              is_verified: user.email_confirmed_at !== null,
-            },
-          ])
+          .select("id")
+          .eq("id", user.id)
+          .single()
         
-        if (userError) {
-          console.error("Error creating user record:", userError)
+        console.log('Existing user check:', { existingUser, existingUserError })
+        
+        if (!existingUser) {
+          console.log('Creating user record...')
+          // Create user record if it doesn't exist
+          const { error: userError } = await supabase
+            .from("users")
+            .insert([
+              {
+                id: user.id,
+                email: user.email,
+                username: user.user_metadata?.username || `user_${user.id.substring(0, 8)}`,
+                password_hash: `placeholder_hash_${user.id}`, // Placeholder since we don't have actual password
+                created_at: user.created_at,
+                updated_at: user.updated_at,
+                is_verified: user.email_confirmed_at !== null,
+              },
+            ])
+          
+          if (userError) {
+            console.error("Error creating user record:", userError)
+          } else {
+            console.log('User record created successfully')
+          }
         }
-      }
-      
-      // Check if user exists in user_profiles table, if not create it
-      const { data: existingProfile } = await supabase
-        .from("user_profiles")
-        .select("user_id")
-        .eq("user_id", user.id)
-        .single()
-      
-      if (!existingProfile) {
-        // Create user profile record if it doesn't exist
-        const { error: profileError } = await supabase
+        
+        // Check if user exists in user_profiles table, if not create it
+        const { data: existingProfile, error: existingProfileError } = await supabase
           .from("user_profiles")
-          .insert([
-            {
-              user_id: user.id,
-              created_at: user.created_at,
-              updated_at: user.updated_at,
-            },
-          ])
+          .select("user_id")
+          .eq("user_id", user.id)
+          .single()
         
-        if (profileError) {
-          console.error("Error creating user profile record:", profileError)
+        console.log('Existing profile check:', { existingProfile, existingProfileError })
+        
+        if (!existingProfile) {
+          console.log('Creating user profile record...')
+          // Create user profile record if it doesn't exist
+          const { error: profileError } = await supabase
+            .from("user_profiles")
+            .insert([
+              {
+                user_id: user.id,
+                created_at: user.created_at,
+                updated_at: user.updated_at,
+              },
+            ])
+          
+          if (profileError) {
+            console.error("Error creating user profile record:", profileError)
+          } else {
+            console.log('User profile record created successfully')
+          }
         }
+        
+        fetchUserStats(user.id)
+      } else {
+        console.log('No user found')
       }
       
-      fetchUserStats(user.id)
+      setUser(user)
+    } catch (error) {
+      console.error('Error in checkUser:', error)
+    } finally {
+      setIsLoading(false)
     }
-    
-    setUser(user)
-    setIsLoading(false)
   }
 
   const fetchUserStats = async (userId: string) => {
@@ -367,6 +394,8 @@ export default function Home() {
     if (!validateForm(true)) return
     setAuthLoading(true)
     try {
+      console.log('Signup attempt with:', { email: formData.email, username: formData.username })
+      
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: formData.email,
         password: formData.password,
@@ -377,11 +406,42 @@ export default function Home() {
           emailRedirectTo: `${window.location.origin}/`,
         },
       })
-      if (authError) throw authError
-      if (!authData.user) throw new Error("User creation failed - no user returned")
-      setTimeout(() => checkUser(), 1000)
+      
+      console.log('Signup response:', { authData, authError })
+      
+      if (authError) {
+        console.error('Auth error:', authError)
+        throw authError
+      }
+      
+      if (!authData.user) {
+        console.error('No user returned from signup')
+        throw new Error("User creation failed - no user returned")
+      }
+      
+      console.log('User created successfully:', authData.user)
+      
+      // Başarılı kayıt mesajı göster
+      setErrors({ general: "Kayıt başarılı! Giriş yapabilirsiniz." })
+      
+      // Formu temizle
+      setFormData({
+        email: "",
+        password: "",
+        username: "",
+        confirmPassword: "",
+      })
+      
+      // Kullanıcıyı giriş tabına yönlendir
+      const signinTab = document.querySelector('[value="signin"]') as HTMLElement
+      if (signinTab) {
+        signinTab.click()
+      }
+      
     } catch (error: any) {
+      console.error('Signup error:', error)
       let errorMessage = "Kayıt sırasında bir hata oluştu"
+      
       if (error.message?.includes("Invalid API key")) {
         errorMessage = "Veritabanı yapılandırma hatası. Lütfen yöneticiye başvurun."
       } else if (error.message?.includes("User already registered")) {
@@ -394,7 +454,12 @@ export default function Home() {
         errorMessage = "Çok fazla deneme yapıldı. Lütfen daha sonra tekrar deneyin."
       } else if (error.message?.includes("signup is disabled")) {
         errorMessage = "Kayıt işlemi şu anda devre dışı. Lütfen daha sonra tekrar deneyin."
+      } else if (error.message?.includes("Unable to validate email address")) {
+        errorMessage = "E-posta adresi doğrulanamadı. Lütfen geçerli bir e-posta adresi girin."
+      } else if (error.message?.includes("Signup is disabled")) {
+        errorMessage = "Kayıt işlemi şu anda devre dışı. Lütfen daha sonra tekrar deneyin."
       }
+      
       setErrors({ general: errorMessage })
     } finally {
       setAuthLoading(false)
@@ -460,116 +525,116 @@ export default function Home() {
 
   if (!user) {
     // Giriş/kayıt formunu göster
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 relative overflow-hidden">
-        <div className="absolute inset-0">
-          <div className="absolute top-20 left-20 w-72 h-72 bg-purple-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-pulse"></div>
-          <div className="absolute top-40 right-20 w-72 h-72 bg-yellow-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-pulse animation-delay-2000"></div>
-          <div className="absolute -bottom-8 left-40 w-72 h-72 bg-pink-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-pulse animation-delay-4000"></div>
-        </div>
-        <div className="relative z-10 container mx-auto px-4 py-8">
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 relative overflow-hidden">
+      <div className="absolute inset-0">
+        <div className="absolute top-20 left-20 w-72 h-72 bg-purple-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-pulse"></div>
+        <div className="absolute top-40 right-20 w-72 h-72 bg-yellow-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-pulse animation-delay-2000"></div>
+        <div className="absolute -bottom-8 left-40 w-72 h-72 bg-pink-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-pulse animation-delay-4000"></div>
+      </div>
+      <div className="relative z-10 container mx-auto px-4 py-8">
           <motion.div initial={{ opacity: 0, y: -50 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8 }} className="text-center mb-12">
-            <div className="flex items-center justify-center mb-6">
+          <div className="flex items-center justify-center mb-6">
               <motion.div animate={{ rotate: 360 }} transition={{ duration: 20, repeat: Number.POSITIVE_INFINITY, ease: "linear" }} className="mr-4">
-                <Globe className="h-12 w-12 text-yellow-400" />
-              </motion.div>
+              <Globe className="h-12 w-12 text-yellow-400" />
+            </motion.div>
               <h1 className="text-6xl font-bold bg-gradient-to-r from-yellow-400 via-pink-500 to-purple-600 bg-clip-text text-transparent">CorpOut</h1>
-            </div>
+          </div>
             <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5, duration: 0.8 }} className="text-2xl text-white/90 font-light">Kurumsal • Özgür • Filtresiz</motion.p>
             <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.7, duration: 0.8 }} className="text-lg text-white/70 mt-4 max-w-2xl mx-auto">Türkiye'nin ilk anonim şirket değerlendirme ve sosyal platform. Gerçek deneyimleri paylaş, özgürce konuş.</motion.p>
           </motion.div>
-          <div className="grid lg:grid-cols-2 gap-12 items-center">
+        <div className="grid lg:grid-cols-2 gap-12 items-center">
             <motion.div initial={{ opacity: 0, x: -50 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.8, delay: 0.3 }} className="space-y-8">
-              <div className="grid gap-6">
-                {features.map((feature, index) => (
+            <div className="grid gap-6">
+              {features.map((feature, index) => (
                   <motion.div key={index} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 + index * 0.1 }} className="flex items-start space-x-4 p-6 rounded-2xl bg-white/10 backdrop-blur-sm border border-white/20 hover:bg-white/20 transition-all duration-300">
-                    <div className="flex-shrink-0">
-                      <feature.icon className="h-8 w-8 text-yellow-400" />
-                    </div>
-                    <div>
-                      <h3 className="text-xl font-semibold text-white mb-2">{feature.title}</h3>
-                      <p className="text-white/70">{feature.description}</p>
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
-            </motion.div>
+                  <div className="flex-shrink-0">
+                    <feature.icon className="h-8 w-8 text-yellow-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-semibold text-white mb-2">{feature.title}</h3>
+                    <p className="text-white/70">{feature.description}</p>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+          </motion.div>
             <motion.div initial={{ opacity: 0, x: 50 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.8, delay: 0.5 }} className="flex justify-center">
-              <Card className="w-full max-w-md bg-white/95 backdrop-blur-sm border-0 shadow-2xl">
-                <CardHeader className="text-center pb-4">
+            <Card className="w-full max-w-md bg-white/95 backdrop-blur-sm border-0 shadow-2xl">
+              <CardHeader className="text-center pb-4">
                   <CardTitle className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">Platforma Katıl</CardTitle>
-                  <CardDescription className="text-gray-600">Anonim kimliğinle özgürce paylaş</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <Tabs defaultValue="signin" className="w-full">
-                    <TabsList className="grid w-full grid-cols-2 mb-6">
+                <CardDescription className="text-gray-600">Anonim kimliğinle özgürce paylaş</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Tabs defaultValue="signin" className="w-full">
+                  <TabsList className="grid w-full grid-cols-2 mb-6">
                       <TabsTrigger value="signin" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-purple-500 data-[state=active]:to-pink-500">Giriş Yap</TabsTrigger>
                       <TabsTrigger value="signup" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-purple-500 data-[state=active]:to-pink-500">Kayıt Ol</TabsTrigger>
-                    </TabsList>
-                    <TabsContent value="signin" className="space-y-4">
-                      <form onSubmit={handleSignIn} className="space-y-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="signin-email">E-posta</Label>
+                  </TabsList>
+                  <TabsContent value="signin" className="space-y-4">
+                    <form onSubmit={handleSignIn} className="space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="signin-email">E-posta</Label>
                           <Input id="signin-email" name="email" type="email" placeholder="ornek@email.com" value={formData.email} onChange={handleInputChange} className={errors.email ? "border-red-500" : ""} />
-                          {errors.email && <p className="text-sm text-red-500">{errors.email}</p>}
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="signin-password">Şifre</Label>
-                          <div className="relative">
+                        {errors.email && <p className="text-sm text-red-500">{errors.email}</p>}
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="signin-password">Şifre</Label>
+                        <div className="relative">
                             <Input id="signin-password" name="password" type={showPassword ? "text" : "password"} placeholder="••••••••" value={formData.password} onChange={handleInputChange} className={errors.password ? "border-red-500" : ""} />
                             <Button type="button" variant="ghost" size="sm" className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent" onClick={() => setShowPassword(!showPassword)}>
-                              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                            </Button>
-                          </div>
-                          {errors.password && <p className="text-sm text-red-500">{errors.password}</p>}
+                            {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                          </Button>
                         </div>
-                        {errors.general && <p className="text-sm text-red-500">{errors.general}</p>}
+                        {errors.password && <p className="text-sm text-red-500">{errors.password}</p>}
+                      </div>
+                      {errors.general && <p className="text-sm text-red-500">{errors.general}</p>}
                         <Button type="submit" className="w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600" disabled={authLoading}>
                           {authLoading ? "Giriş yapılıyor..." : "Giriş Yap"}
                         </Button>
                         <div className="text-center">
                           <Button variant="link" className="text-sm text-purple-600">Şifremi Unuttum</Button>
-                        </div>
-                      </form>
-                    </TabsContent>
-                    <TabsContent value="signup" className="space-y-4">
-                      <form onSubmit={handleSignUp} className="space-y-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="signup-username">Kullanıcı Adı</Label>
+                      </div>
+                    </form>
+                  </TabsContent>
+                  <TabsContent value="signup" className="space-y-4">
+                    <form onSubmit={handleSignUp} className="space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="signup-username">Kullanıcı Adı</Label>
                           <Input id="signup-username" name="username" placeholder="kullaniciadi" value={formData.username} onChange={handleInputChange} className={errors.username ? "border-red-500" : ""} />
-                          {errors.username && <p className="text-sm text-red-500">{errors.username}</p>}
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="signup-email">E-posta</Label>
+                        {errors.username && <p className="text-sm text-red-500">{errors.username}</p>}
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="signup-email">E-posta</Label>
                           <Input id="signup-email" name="email" type="email" placeholder="ornek@email.com" value={formData.email} onChange={handleInputChange} className={errors.email ? "border-red-500" : ""} />
-                          {errors.email && <p className="text-sm text-red-500">{errors.email}</p>}
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="signup-password">Şifre</Label>
-                          <div className="relative">
+                        {errors.email && <p className="text-sm text-red-500">{errors.email}</p>}
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="signup-password">Şifre</Label>
+                        <div className="relative">
                             <Input id="signup-password" name="password" type={showPassword ? "text" : "password"} placeholder="••••••••" value={formData.password} onChange={handleInputChange} className={errors.password ? "border-red-500" : ""} />
                             <Button type="button" variant="ghost" size="sm" className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent" onClick={() => setShowPassword(!showPassword)}>
-                              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                            </Button>
-                          </div>
-                          {errors.password && <p className="text-sm text-red-500">{errors.password}</p>}
+                            {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                          </Button>
                         </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="confirm-password">Şifre Tekrar</Label>
+                        {errors.password && <p className="text-sm text-red-500">{errors.password}</p>}
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="confirm-password">Şifre Tekrar</Label>
                           <Input id="confirm-password" name="confirmPassword" type="password" placeholder="••••••••" value={formData.confirmPassword} onChange={handleInputChange} className={errors.confirmPassword ? "border-red-500" : ""} />
-                          {errors.confirmPassword && <p className="text-sm text-red-500">{errors.confirmPassword}</p>}
-                        </div>
-                        {errors.general && <p className="text-sm text-red-500">{errors.general}</p>}
+                        {errors.confirmPassword && <p className="text-sm text-red-500">{errors.confirmPassword}</p>}
+                      </div>
+                      {errors.general && <p className="text-sm text-red-500">{errors.general}</p>}
                         <Button type="submit" className="w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600" disabled={authLoading}>
                           {authLoading ? "Kayıt oluşturuluyor..." : "Kayıt Ol"}
-                        </Button>
-                      </form>
-                    </TabsContent>
-                  </Tabs>
-                </CardContent>
-              </Card>
-            </motion.div>
-          </div>
+                      </Button>
+                    </form>
+                  </TabsContent>
+                </Tabs>
+              </CardContent>
+            </Card>
+          </motion.div>
+        </div>
         </div>
       </div>
     )
@@ -768,9 +833,9 @@ export default function Home() {
               <h3 className="text-xl font-semibold mb-2">Henüz gönderi yok</h3>
               <p>İlk gönderini paylaşarak başla!</p>
             </div>
-          </motion.div>
+        </motion.div>
         )}
       </div>
     </div>
   )
-} 
+}
