@@ -19,6 +19,7 @@ import Link from "next/link"
 export default function Navigation() {
   const [user, setUser] = useState<any>(null)
   const [usersUsername, setUsersUsername] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const router = useRouter()
   const pathname = usePathname()
 
@@ -35,6 +36,9 @@ export default function Navigation() {
     if (user) {
       const { data: userRow } = await supabase.from("users").select("username").eq("id", user.id).single();
       setUsersUsername(userRow?.username || "");
+      // user_profiles tablosundan avatar_url çek
+      const { data: profileRow } = await supabase.from("user_profiles").select("avatar_url").eq("user_id", user.id).single();
+      setAvatarUrl(profileRow?.avatar_url || null);
     }
   }
 
@@ -96,7 +100,7 @@ export default function Navigation() {
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="relative h-8 w-8 rounded-full">
                   <Avatar className="h-8 w-8">
-                    <AvatarImage src="/placeholder.svg?height=32&width=32" />
+                    <AvatarImage src={avatarUrl || "/placeholder.svg?height=32&width=32"} />
                     <AvatarFallback className="bg-gradient-to-r from-purple-500 to-pink-500 text-white">
                       {(usersUsername?.[0] || "U").toUpperCase()}
                     </AvatarFallback>

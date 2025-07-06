@@ -1,102 +1,440 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { motion } from "framer-motion"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Badge } from "@/components/ui/badge"
-import {
-  Send,
-  Search,
-  MoreHorizontal,
-  Phone,
-  Video,
-  UserPlus,
-  MessageCircle,
-} from "lucide-react"
-import { supabase } from "@/lib/supabase"
-import { useRouter } from "next/navigation"
-import Navigation from "@/components/navigation"
+import { useEffect, useState, useRef } from "react";
+import { supabase } from "@/lib/supabase";
+import Navigation from "@/components/navigation";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+
+interface UserProfile {
+  id: string;
+  username: string;
+  avatar_url?: string;
+  position_title?: string;
+}
+
+interface Message {
+  id: string;
+  sender_id: string;
+  receiver_id: string;
+  content: string;
+  created_at: string;
+}
 
 export default function MessagesPage() {
-  const [isLoading, setIsLoading] = useState(true)
-  const [user, setUser] = useState<any>(null)
-  const router = useRouter()
+  const [user, setUser] = useState<any>(null);
+  const [conversations, setConversations] = useState<any[]>([]);
+  const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState("");
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
 
-  useEffect(() => {
-    checkUser()
-  }, [])
+  const router = useRouter();
+  const searchParams = useSearchParams();
 
-  const checkUser = async () => {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-    if (!user) {
-      router.push("/")
-      return
+  // Fetch conversations: unique users with whom the user has exchanged messages
+  const fetchConversations = async (userId: string) => {
+    setLoading(true);
+    // Get all messages where user is sender or receiver
+    const { data: allMessages } = await supabase
+      .from("messages")
+      .select("*")
+      .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`)
+      .order("created_at", { ascending: false });
+    if (!allMessages) {
+      setConversations([]);
+      setLoading(false);
+      return;
     }
-    setUser(user)
-    setIsLoading(false)
-  }
+    // Find unique conversation partners
+    const partnersMap: Record<string, any> = {};
+    for (const msg of allMessages) {
+      const partnerId = msg.sender_id === userId ? msg.receiver_id : msg.sender_id;
+      if (!partnersMap[partnerId]) {
+        partnersMap[partnerId] = {
+          user_id: partnerId,
+          last_message: msg,
+        };
+      }
+    }
+    const partnerIds = Object.keys(partnersMap);
+    if (partnerIds.length === 0) {
+      setConversations([]);
+      setLoading(false);
+      return;
+    }
+    // Fetch user info for all partners
+    // 1. users tablosundan username çek
+    const { data: usersData } = await supabase
+      .from("users")
+      .select("id, username")
+      .in("id", partnerIds);
+    // 2. user_profiles tablosundan avatar çek
+    const { data: profiles } = await supabase
+      .from("user_profiles")
+      .select("user_id, avatar_url")
+      .in("user_id", partnerIds);
+    // Fetch last reviewed position for each partner
+    let positionsMap: Record<string, string> = {};
+    if (profiles && profiles.length > 0) {
+      const { data: reviews } = await supabase
+        .from("company_reviews")
+        .select("user_id, position_id, created_at")
+        .in("user_id", partnerIds)
+        .order("created_at", { ascending: false });
+      if (reviews) {
+        const latestByUser: Record<string, number> = {};
+        for (const r of reviews) {
+          if (!latestByUser[r.user_id]) latestByUser[r.user_id] = r.position_id;
+        }
+        const positionIds = Object.values(latestByUser);
+        if (positionIds.length > 0) {
+          const { data: positions } = await supabase
+            .from("positions")
+            .select("id, title")
+            .in("id", positionIds);
+          if (positions) {
+            for (const [uid, pid] of Object.entries(latestByUser)) {
+              const pos = positions.find((p: any) => p.id === pid);
+              if (pos) positionsMap[uid] = pos.title;
+            }
+          }
+        }
+      }
+    }
+    // Merge profiles and last message
+    const convs = partnerIds.map(pid => {
+      const userObj = usersData?.find((u: any) => u.id === pid);
+      const profile = profiles?.find((p: any) => p.user_id === pid);
+      return {
+        user_id: pid,
+        username: userObj?.username || "Kullanıcı",
+        avatar_url: profile?.avatar_url || "/placeholder-user.jpg",
+        position_title: positionsMap[pid] || undefined,
+        last_message: partnersMap[pid].last_message,
+      };
+    });
+    setConversations(convs);
+    setLoading(false);
+  };
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-purple-50 to-pink-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-purple-600"></div>
-      </div>
-    )
-  }
+  // Sayfa açıldığında ve yeni mesaj gönderildiğinde conversations fetch et
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      setUser(user);
+      if (user) fetchConversations(user.id);
+    });
+  }, []);
+
+  // Yeni mesaj gönderildiğinde conversations'ı güncelle
+  const handleSend = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!input.trim() || !user || !selectedUser) return;
+    await supabase.from("messages").insert({
+      sender_id: user.id,
+      receiver_id: selectedUser.user_id,
+      content: input,
+      is_read: false,
+    });
+    setInput("");
+    fetchMessages(selectedUser.user_id);
+    if (user) fetchConversations(user.id); // conversations'ı güncelle
+  };
+
+  // Fetch messages with selected user
+  const fetchMessages = async (otherUserId: string) => {
+    if (!user) return;
+    const { data } = await supabase
+      .from("messages")
+      .select("*")
+      .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
+      .or(`sender_id.eq.${otherUserId},receiver_id.eq.${otherUserId}`)
+      .order("created_at", { ascending: true });
+    // Sadece iki kullanıcı arasındaki mesajlar ve content'i boş olmayanlar
+    const filtered = (data || []).filter(
+      (msg: any) =>
+        ((msg.sender_id === user.id && msg.receiver_id === otherUserId) ||
+        (msg.sender_id === otherUserId && msg.receiver_id === user.id)) &&
+        msg.content && msg.content.trim() !== ""
+    );
+    setMessages(filtered);
+    setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, 100);
+  };
+
+  // Kişi seçilince
+  const handleSelectUser = (conv: any) => {
+    setSelectedUser(conv);
+    fetchMessages(conv.user_id);
+  };
+
+  // Kullanıcı arama fonksiyonu
+  const handleSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSearchLoading(true);
+    const { data } = await supabase
+      .from("users")
+      .select("id, username")
+      .ilike("username", `%${search}%`);
+    // user_profiles ile avatar çek
+    let results = data || [];
+    if (results.length > 0) {
+      const ids = results.map((u: any) => u.id);
+      const { data: profiles } = await supabase
+        .from("user_profiles")
+        .select("user_id, avatar_url")
+        .in("user_id", ids);
+      results = results.map((u: any) => ({
+        ...u,
+        avatar_url: profiles?.find((p: any) => p.user_id === u.id)?.avatar_url || "/placeholder-user.jpg"
+      }));
+    }
+    setSearchResults(results);
+    setSearchLoading(false);
+  };
+
+  // Arama sonucundan kişi seçilince
+  const handleStartChat = async (userObj: any) => {
+    // Eğer zaten listede varsa direkt seç
+    const existing = conversations.find(c => c.user_id === userObj.id);
+    if (existing) {
+      handleSelectUser(existing);
+      setSearchResults([]);
+      setSearch("");
+      return;
+    }
+    // Yoksa yeni bir sohbet başlat (listeye ekle)
+    const newConv = {
+      user_id: userObj.id,
+      username: userObj.username,
+      avatar_url: userObj.avatar_url,
+      position_title: undefined,
+      last_message: { content: "", created_at: new Date().toISOString() }
+    };
+    setConversations([newConv, ...conversations]);
+    setSelectedUser(newConv);
+    setMessages([]);
+    setSearchResults([]);
+    setSearch("");
+  };
+
+  // Tarih formatı
+  const formatDate = (date: string) => {
+    const d = new Date(date);
+    const now = new Date();
+    if (d.toDateString() === now.toDateString()) {
+      return d.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
+    }
+    return d.toLocaleDateString("tr-TR");
+  };
+
+  // URL'den user parametresiyle gelen kişiyi conversations fetch edildikten sonra kesinlikle seçili yap
+  useEffect(() => {
+    const userParam = searchParams.get("user");
+    if (userParam && conversations.length > 0) {
+      const existing = conversations.find(c => c.user_id === userParam);
+      if (existing && (!selectedUser || selectedUser.user_id !== userParam)) {
+        setSelectedUser(existing);
+        fetchMessages(existing.user_id);
+      }
+    }
+    // eslint-disable-next-line
+  }, [conversations, searchParams]);
+
+  // Mesaj silme fonksiyonu
+  const handleDeleteMessage = async (msgId: string) => {
+    await supabase.from("messages").delete().eq("id", msgId);
+    if (selectedUser) fetchMessages(selectedUser.user_id);
+    if (user) fetchConversations(user.id);
+  };
+
+  // Tüm konuşmayı silme fonksiyonu
+  const handleDeleteConversation = async (partnerId: string) => {
+    if (!user) return;
+    // Sadece iki kullanıcı arasındaki mesajları sil
+    await supabase.from("messages")
+      .delete()
+      .or(`and(sender_id.eq.${user.id},receiver_id.eq.${partnerId})`, `and(sender_id.eq.${partnerId},receiver_id.eq.${user.id})`);
+    // Local conversations state'inden çıkar
+    setConversations(prev => prev.filter(c => c.user_id !== partnerId));
+    if (selectedUser && selectedUser.user_id === partnerId) {
+      setSelectedUser(null);
+      setMessages([]);
+    }
+    // Supabase'dan tekrar fetch et
+    await fetchConversations(user.id);
+  };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-indigo-50">
+    <>
       <Navigation />
+      <div className="flex h-[80vh] max-w-4xl mx-auto mt-10 border rounded-lg shadow bg-white overflow-hidden">
+        {/* Sol Panel */}
+        <div className="w-1/3 border-r bg-gray-50 flex flex-col">
+          <div className="p-4 border-b">
+            <h2 className="text-lg font-bold">Mesajlar</h2>
+            {/* Kullanıcı arama kutusu */}
+            <form onSubmit={handleSearch} className="flex gap-2 mt-3 mb-1">
+              <input
+                type="text"
+                className="border px-3 py-2 rounded w-full"
+                placeholder="Kullanıcı adı ara..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+              />
+              <button type="submit" className="bg-purple-600 text-white px-3 py-2 rounded">Ara</button>
+            </form>
+            {searchLoading && <div className="text-xs text-gray-400 mt-1">Aranıyor...</div>}
+            {searchResults.length > 0 && (
+              <ul className="bg-white border rounded shadow mt-2 max-h-48 overflow-y-auto z-10 absolute w-72">
+                {searchResults.map(u => (
+                  <li key={u.id}>
+                    <button
+                      className="flex items-center gap-2 w-full px-3 py-2 hover:bg-purple-50 text-left"
+                      onClick={() => handleStartChat(u)}
+                    >
+                      <img src={u.avatar_url} alt="avatar" className="w-7 h-7 rounded-full object-cover border" />
+                      <span className="truncate">{u.username}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            {loading ? (
+              <div className="p-4 text-gray-400">Yükleniyor...</div>
+            ) : conversations.length === 0 ? (
+              <div className="p-4 text-gray-400">Henüz kimseyle mesajlaşmadın.</div>
+            ) : (
+              conversations.map(conv => (
+                <ConversationRow
+                  key={conv.user_id}
+                  conv={conv}
+                  isSelected={selectedUser?.user_id === conv.user_id}
+                  onSelect={() => handleSelectUser(conv)}
+                  onDelete={() => handleDeleteConversation(conv.user_id)}
+                />
+              ))
+            )}
+          </div>
+        </div>
+        {/* Sağ Panel */}
+        <div className="flex-1 flex flex-col">
+          {!selectedUser ? (
+            <div className="flex-1 flex items-center justify-center text-gray-400">Bir sohbet seçin</div>
+          ) : (
+            <>
+              {/* Üstte kişi bilgisi */}
+              <div className="flex items-center gap-4 border-b px-6 py-4 bg-white">
+                <Link href={`/profile/${selectedUser.user_id}`} className="flex-shrink-0">
+                  <img src={selectedUser.avatar_url} alt="avatar" className="w-12 h-12 rounded-full object-cover border hover:opacity-80 transition" />
+                </Link>
+                <div>
+                  <Link href={`/profile/${selectedUser.user_id}`} className="font-bold text-lg hover:underline">
+                    {selectedUser.username}
+                  </Link>
+                  {selectedUser.position_title && (
+                    <div className="text-xs text-gray-500 mt-1">{selectedUser.position_title}</div>
+                  )}
+                </div>
+              </div>
+              {/* Mesajlar */}
+              <div className="flex-1 overflow-y-auto bg-gray-50 px-6 py-4">
+                {messages.length === 0 ? (
+                  <div className="text-gray-400 text-center mt-10">Henüz mesaj yok.</div>
+                ) : (
+                  messages.map(msg => (
+                    <MessageBubble
+                      key={msg.id}
+                      msg={msg}
+                      isOwn={msg.sender_id === user?.id}
+                      onDelete={handleDeleteMessage}
+                    />
+                  ))
+                )}
+                <div ref={messagesEndRef} />
+              </div>
+              {/* Mesaj yazma kutusu */}
+              <form onSubmit={handleSend} className="flex gap-2 border-t px-6 py-4 bg-white">
+                <input
+                  type="text"
+                  className="border px-3 py-2 rounded w-full"
+                  placeholder="Mesaj yaz..."
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
+                />
+                <button type="submit" className="bg-purple-600 text-white px-4 py-2 rounded">Gönder</button>
+              </form>
+            </>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
 
-      <div className="container mx-auto px-4 py-8 max-w-4xl">
-        {/* Header */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
-          <div className="text-center mb-8">
-            <h1 className="text-4xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent mb-4">
-              Mesajlar
-            </h1>
-            <p className="text-gray-600 text-lg">
-              Arkadaşlarınızla özel mesajlaşın
-            </p>
-          </div>
-        </motion.div>
-
-        {/* Coming Soon */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="text-center py-12"
-        >
-          <div className="w-24 h-24 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full flex items-center justify-center mx-auto mb-6">
-            <MessageCircle className="h-12 w-12 text-white" />
-          </div>
-          <h3 className="text-2xl font-semibold text-gray-800 mb-4">
-            Yakında Geliyor!
-          </h3>
-          <p className="text-gray-600 text-lg mb-8 max-w-2xl mx-auto">
-            Mesajlaşma özelliği şu anda geliştirme aşamasında. Arkadaşlarınızla özel mesajlaşabilmek için çok yakında burada olacak!
-          </p>
-          <div className="flex justify-center space-x-4">
-            <Button
-              onClick={() => router.push('/social')}
-              className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
+function MessageBubble({ msg, isOwn, onDelete }: { msg: any, isOwn: boolean, onDelete: (id: string) => void }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  return (
+    <div className={`mb-2 flex ${isOwn ? "justify-end" : "justify-start"} relative group`}>
+      <div className={`px-3 py-2 rounded-lg max-w-xs ${isOwn ? "bg-purple-500 text-white" : "bg-white border"}`}>
+        {msg.content}
+        <div className="flex items-center justify-end gap-1 mt-1">
+          <div className="text-xs text-gray-400">{new Date(msg.created_at).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}</div>
+          {isOwn && (
+            <button
+              className="ml-1 text-gray-400 hover:text-black px-1"
+              onClick={() => setMenuOpen(v => !v)}
+              tabIndex={-1}
             >
-              Sosyal Akışa Git
-            </Button>
-            <Button
-              onClick={() => router.push('/dashboard')}
-              variant="outline"
-            >
-              Dashboard'a Dön
-            </Button>
+              <span style={{ fontSize: 18, fontWeight: "bold" }}>⋯</span>
+            </button>
+          )}
+        </div>
+        {menuOpen && isOwn && (
+          <div className="absolute right-0 top-8 z-30 bg-white border rounded shadow min-w-[120px] text-sm">
+            <button className="block w-full px-4 py-2 text-left hover:bg-gray-100 text-black" onClick={() => { onDelete(msg.id); setMenuOpen(false); }}>Mesajı Sil</button>
           </div>
-        </motion.div>
+        )}
       </div>
     </div>
-  )
+  );
+}
+
+function ConversationRow({ conv, isSelected, onSelect, onDelete }: { conv: any, isSelected: boolean, onSelect: () => void, onDelete: () => void }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  return (
+    <div className={`w-full flex items-center gap-3 px-4 py-3 border-b hover:bg-purple-50 transition text-left relative ${isSelected ? "bg-purple-100" : ""}`}
+      onClick={onSelect}
+    >
+      <img src={conv.avatar_url} alt="avatar" className="w-10 h-10 rounded-full object-cover border" />
+      <div className="flex-1 min-w-0">
+        <div className="font-semibold truncate">{conv.username}</div>
+        <div className="text-xs text-gray-500 truncate">
+          {conv.last_message.content.slice(0, 40)}{conv.last_message.content.length > 40 ? "..." : ""}
+        </div>
+      </div>
+      <div className="text-xs text-gray-400 ml-2 whitespace-nowrap">
+        {conv.last_message.created_at && new Date(conv.last_message.created_at).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}
+      </div>
+      <button
+        className="ml-2 text-gray-400 hover:text-black px-1 z-10"
+        onClick={e => { e.stopPropagation(); setMenuOpen(v => !v); }}
+        tabIndex={-1}
+      >
+        <span style={{ fontSize: 18, fontWeight: "bold" }}>⋯</span>
+      </button>
+      {menuOpen && (
+        <div className="absolute right-2 top-12 z-30 bg-white border rounded shadow min-w-[140px] text-sm">
+          <button className="block w-full px-4 py-2 text-left hover:bg-gray-100 text-black" onClick={() => { onDelete(); setMenuOpen(false); }}>Mesajları Sil</button>
+        </div>
+      )}
+    </div>
+  );
 } 

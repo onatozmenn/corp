@@ -34,7 +34,7 @@ import { useSearchParams } from "next/navigation"
 
 interface Post {
   id: string
-  user_id: string // eklendi
+  user_id: string
   content: string
   image_url?: string
   video_url?: string
@@ -44,11 +44,12 @@ interface Post {
   users: {
     username: string
   }
+  position_title?: string // eklendi
 }
 
 interface Comment {
   id: string
-  user_id: string // eklendi
+  user_id: string
   content: string
   created_at: string
   users: {
@@ -63,8 +64,8 @@ export default function Home() {
   const [user, setUser] = useState<any>(null)
   const [userStats, setUserStats] = useState({
     postsCount: 0,
-    likesCount: 0,
     followersCount: 0,
+    followingCount: 0,
   })
   const [showPassword, setShowPassword] = useState(false)
   const [formData, setFormData] = useState({
@@ -259,19 +260,22 @@ export default function Home() {
   const fetchUserStats = async (userId: string) => {
     try {
       const { data: postsData } = await supabase.from("posts").select("id").eq("user_id", userId)
-      const { data: likesData } = await supabase
-        .from("likes")
-        .select("id")
-        .in("post_id", postsData?.map((p) => p.id) || [])
-      const { data: friendsData } = await supabase
+      // Takipçi: addressee_id = userId, status = accepted
+      const { count: followersCount } = await supabase
         .from("friendships")
-        .select("id")
-        .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`)
+        .select("id", { count: "exact", head: true })
+        .eq("addressee_id", userId)
+        .eq("status", "accepted")
+      // Takip edilen: requester_id = userId, status = accepted
+      const { count: followingCount } = await supabase
+        .from("friendships")
+        .select("id", { count: "exact", head: true })
+        .eq("requester_id", userId)
         .eq("status", "accepted")
       setUserStats({
         postsCount: postsData?.length || 0,
-        likesCount: likesData?.length || 0,
-        followersCount: friendsData?.length || 0,
+        followersCount: followersCount || 0,
+        followingCount: followingCount || 0,
       })
     } catch (error) {
       console.error("Error fetching user stats:", error)
@@ -286,7 +290,27 @@ export default function Home() {
         .order("created_at", { ascending: false })
         .limit(20)
       if (error) throw error
-      setPosts(data || [])
+      // Her post için ilgili kullanıcının en son değerlendirmesindeki pozisyonu çek
+      const postsWithPosition = await Promise.all((data || []).map(async (post: any) => {
+        const { data: review } = await supabase
+          .from("company_reviews")
+          .select("position_id")
+          .eq("user_id", post.user_id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .single()
+        let positionTitle = "";
+        if (review?.position_id) {
+          const { data: position } = await supabase
+            .from("positions")
+            .select("title")
+            .eq("id", review.position_id)
+            .single()
+          positionTitle = position?.title || "";
+        }
+        return { ...post, position_title: positionTitle };
+      }));
+      setPosts(postsWithPosition)
     } catch (error) {
       console.error("Error fetching posts:", error)
     }
@@ -746,16 +770,12 @@ export default function Home() {
                 </div>
                 <div className="hidden md:flex space-x-4">
                   <div className="text-center">
-                    <div className="text-2xl font-bold">{userStats.postsCount}</div>
-                    <div className="text-sm text-white/80">Gönderi</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold">{userStats.likesCount}</div>
-                    <div className="text-sm text-white/80">Beğeni</div>
-                  </div>
-                  <div className="text-center">
                     <div className="text-2xl font-bold">{userStats.followersCount}</div>
-                    <div className="text-sm text-white/80">Arkadaş</div>
+                    <div className="text-sm text-white/80">Takipçi</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold">{userStats.followingCount}</div>
+                    <div className="text-sm text-white/80">Takip Edilen</div>
                   </div>
                 </div>
               </div>
@@ -775,7 +795,7 @@ export default function Home() {
               <div className="flex items-center space-x-3">
                 <Avatar>
                   <AvatarImage src="/placeholder.svg?height=40&width=40" />
-                  <AvatarFallback className="bg-gradient-to-r from-purple-500 to-pink-500 text-white">{user?.user_metadata?.username?.[0]?.toUpperCase() || "U"}</AvatarFallback>
+                  <AvatarFallback className="bg-gradient-to-r from-blue-500 to-purple-500 text-white">{user?.user_metadata?.username?.[0]?.toUpperCase() || "U"}</AvatarFallback>
                 </Avatar>
                 <div>
                   <p className="font-semibold">{currentUsername || "Kullanıcı"}</p>
@@ -812,12 +832,19 @@ export default function Home() {
                 <CardHeader className="pb-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-3">
-                      <Avatar>
-                        <AvatarImage src="/placeholder.svg?height=40&width=40" />
-                        <AvatarFallback className="bg-gradient-to-r from-blue-500 to-purple-500 text-white">{post.users.username[0].toUpperCase()}</AvatarFallback>
-                      </Avatar>
-                      <div>
+                      <div onClick={() => router.push(`/profile/${post.user_id}`)} style={{cursor: 'pointer'}}>
+                        <Avatar>
+                          <AvatarImage src={"/placeholder-user.jpg"} />
+                          <AvatarFallback className="bg-gradient-to-r from-blue-500 to-purple-500 text-white">
+                            {post.users?.username?.[0]?.toUpperCase()}
+                          </AvatarFallback>
+                        </Avatar>
+                      </div>
+                      <div onClick={() => router.push(`/profile/${post.user_id}`)} style={{cursor: 'pointer'}}>
                         <p className="font-semibold">{post.users.username}</p>
+                        {post.position_title && (
+                          <p className="text-xs text-gray-500">{post.position_title}</p>
+                        )}
                         <p className="text-sm text-gray-500">{formatDate(post.created_at)}</p>
                       </div>
                     </div>
@@ -879,8 +906,9 @@ export default function Home() {
                         {comments[post.id]?.map((comment) => (
                           <div key={comment.id} className="flex items-start space-x-3 p-3 bg-gray-50 rounded-lg">
                             <Avatar className="h-8 w-8">
+                              <AvatarImage src={"/placeholder-user.jpg"} />
                               <AvatarFallback className="bg-gradient-to-r from-blue-500 to-purple-500 text-white text-xs">
-                                {comment.users.username[0].toUpperCase()}
+                                {comment.users?.username?.[0]?.toUpperCase()}
                               </AvatarFallback>
                             </Avatar>
                             <div className="flex-1">
