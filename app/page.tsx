@@ -848,6 +848,29 @@ export default function Home() {
     });
   }, [posts, showCommentBox, comments, loadingComments]);
 
+  // Giriş (Sign In) fonksiyonu
+  const handleSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrors({});
+    setAuthLoading(true);
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: formData.email,
+        password: formData.password,
+      });
+      if (error) {
+        setErrors({ general: error.message });
+      } else {
+        // Başarılı girişte sayfayı yenile veya kullanıcıyı state'e ata
+        window.location.reload();
+      }
+    } catch (err: any) {
+      setErrors({ general: err.message || "Bir hata oluştu" });
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-50 to-pink-50 flex items-center justify-center">
