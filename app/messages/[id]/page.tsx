@@ -23,25 +23,49 @@ export default function ChatPage() {
     if (user) {
       fetchMessages();
       fetchOtherUser();
+      
+      // Real-time mesaj dinleme
+      const channel = supabase
+        .channel('direct-messages')
+        .on('postgres_changes', 
+          { 
+            event: 'INSERT', 
+            schema: 'public', 
+            table: 'messages',
+            filter: `sender_id=eq.${user.id} OR receiver_id=eq.${user.id}`
+          }, 
+          (payload) => {
+            console.log('New message received:', payload);
+            // Yeni mesaj geldiğinde mesajları güncelle
+            fetchMessages();
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
     }
-    // eslint-disable-next-line
   }, [user, otherUserId]);
 
   const fetchMessages = async () => {
     if (!user) return;
-    const { data } = await supabase
+    
+    // Daha spesifik sorgu - sadece iki kullanıcı arasındaki mesajları çek
+    const { data, error } = await supabase
       .from("messages")
       .select("*")
-      .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
-      .or(`sender_id.eq.${otherUserId},receiver_id.eq.${otherUserId}`)
+      .or(`and(sender_id.eq.${user.id},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${user.id})`)
       .order("created_at", { ascending: true });
-    // Sadece iki kullanıcı arasındaki mesajlar
-    const filtered = (data || []).filter(
-      (msg: any) =>
-        (msg.sender_id === user.id && msg.receiver_id === otherUserId) ||
-        (msg.sender_id === otherUserId && msg.receiver_id === user.id)
-    );
-    setMessages(filtered);
+    
+    if (error) {
+      console.error('Error fetching messages:', error);
+      return;
+    }
+    
+    setMessages(data || []);
+    
+    // Scroll to bottom
     setTimeout(() => {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, 100);
@@ -55,14 +79,38 @@ export default function ChatPage() {
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || !user) return;
-    await supabase.from("messages").insert({
+    
+    // Mesajı gönder
+    const { error } = await supabase.from("messages").insert({
       sender_id: user.id,
       receiver_id: otherUserId,
       content: input,
       is_read: false,
     });
+    
+    if (error) {
+      console.error('Error sending message:', error);
+      return;
+    }
+    
+    // Input'u temizle
     setInput("");
-    fetchMessages();
+    
+    // Mesajı hemen UI'a ekle (optimistic update)
+    const newMessage = {
+      id: Date.now().toString(), // Geçici ID
+      sender_id: user.id,
+      receiver_id: otherUserId,
+      content: input,
+      created_at: new Date().toISOString(),
+    };
+    
+    setMessages(prev => [...prev, newMessage]);
+    
+    // Scroll to bottom
+    setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, 100);
   };
 
   return (

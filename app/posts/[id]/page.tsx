@@ -37,14 +37,14 @@ export default function PostDetailPage() {
     // Gönderiyi çek
     const { data: postData } = await supabase
       .from("posts")
-      .select("id, content, created_at, user_id")
+      .select("id, content, created_at, user_id, users(username), user_profiles!user_id(avatar_url)")
       .eq("id", postId)
       .single()
     setPost(postData)
     // Yorumları çek
     const { data: commentData } = await supabase
       .from("comments")
-      .select("id, content, created_at, user_id")
+      .select("id, content, created_at, user_id, users(username), user_profiles!user_id(avatar_url)")
       .eq("post_id", postId)
       .order("created_at", { ascending: false })
     setComments(commentData || [])

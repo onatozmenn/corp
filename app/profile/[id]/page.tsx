@@ -127,11 +127,11 @@ export default function ProfilePage() {
       .eq("user_id", userId)
     const { data: posts } = await supabase
       .from("posts")
-      .select("id, created_at, content")
+      .select("id, created_at, content, user_id, users(username), user_profiles!user_id(avatar_url)")
       .eq("user_id", userId)
     const { data: comments } = await supabase
       .from("comments")
-      .select("id, created_at, content, post_id")
+      .select("id, created_at, content, post_id, user_id, users(username), user_profiles!user_id(avatar_url)")
       .eq("user_id", userId)
     const all = [
       ...(reviews || []).map(r => ({

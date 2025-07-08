@@ -8,6 +8,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 
 interface UserProfile {
   id: string;
+  user_id: string;
   username: string;
   avatar_url?: string;
   position_title?: string;
@@ -126,42 +127,106 @@ export default function MessagesPage() {
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       setUser(user);
-      if (user) fetchConversations(user.id);
+      if (user) {
+        fetchConversations(user.id);
+        
+        // Real-time mesaj dinleme
+        const channel = supabase
+          .channel('messages')
+          .on('postgres_changes', 
+            { 
+              event: 'INSERT', 
+              schema: 'public', 
+              table: 'messages',
+              filter: `sender_id=eq.${user.id} OR receiver_id=eq.${user.id}`
+            }, 
+            (payload) => {
+              console.log('New message received:', payload);
+              // Yeni mesaj geldiğinde conversations'ı güncelle
+              fetchConversations(user.id);
+              
+              // Eğer seçili kullanıcıdan mesaj geldiyse, mesajları da güncelle
+              if (selectedUser && 
+                  (payload.new.sender_id === selectedUser.user_id || 
+                   payload.new.receiver_id === selectedUser.user_id)) {
+                fetchMessages(selectedUser.user_id);
+              }
+            }
+          )
+          .subscribe();
+
+        return () => {
+          supabase.removeChannel(channel);
+        };
+      } else {
+        // Kullanıcı giriş yapmamışsa ana sayfaya yönlendir
+        router.push("/");
+      }
     });
-  }, []);
+  }, [selectedUser, router]);
 
   // Yeni mesaj gönderildiğinde conversations'ı güncelle
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || !user || !selectedUser) return;
-    await supabase.from("messages").insert({
+    
+    // Mesajı gönder
+    const { error } = await supabase.from("messages").insert({
       sender_id: user.id,
       receiver_id: selectedUser.user_id,
       content: input,
       is_read: false,
     });
+    
+    if (error) {
+      console.error('Error sending message:', error);
+      return;
+    }
+    
+    // Input'u temizle
     setInput("");
-    fetchMessages(selectedUser.user_id);
-    if (user) fetchConversations(user.id); // conversations'ı güncelle
+    
+    // Mesajı hemen UI'a ekle (optimistic update)
+    const newMessage = {
+      id: Date.now().toString(), // Geçici ID
+      sender_id: user.id,
+      receiver_id: selectedUser.user_id,
+      content: input,
+      created_at: new Date().toISOString(),
+    };
+    
+    setMessages(prev => [...prev, newMessage]);
+    
+    // Scroll to bottom
+    setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, 100);
   };
 
   // Fetch messages with selected user
   const fetchMessages = async (otherUserId: string) => {
     if (!user) return;
-    const { data } = await supabase
+    
+    // Daha spesifik sorgu - sadece iki kullanıcı arasındaki mesajları çek
+    const { data, error } = await supabase
       .from("messages")
       .select("*")
-      .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
-      .or(`sender_id.eq.${otherUserId},receiver_id.eq.${otherUserId}`)
+      .or(`and(sender_id.eq.${user.id},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${user.id})`)
       .order("created_at", { ascending: true });
-    // Sadece iki kullanıcı arasındaki mesajlar ve content'i boş olmayanlar
+    
+    if (error) {
+      console.error('Error fetching messages:', error);
+      return;
+    }
+    
+    // Sadece content'i boş olmayan mesajları filtrele
     const filtered = (data || []).filter(
-      (msg: any) =>
-        ((msg.sender_id === user.id && msg.receiver_id === otherUserId) ||
-        (msg.sender_id === otherUserId && msg.receiver_id === user.id)) &&
-        msg.content && msg.content.trim() !== ""
+      (msg: any) => msg.content && msg.content.trim() !== ""
     );
+    
     setMessages(filtered);
+    
+    // Scroll to bottom
     setTimeout(() => {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, 100);
@@ -209,12 +274,12 @@ export default function MessagesPage() {
       return;
     }
     // Yoksa yeni bir sohbet başlat (listeye ekle)
-    const newConv = {
+    const newConv: UserProfile = {
+      id: userObj.id,
       user_id: userObj.id,
       username: userObj.username,
       avatar_url: userObj.avatar_url,
       position_title: undefined,
-      last_message: { content: "", created_at: new Date().toISOString() }
     };
     setConversations([newConv, ...conversations]);
     setSelectedUser(newConv);
@@ -259,7 +324,8 @@ export default function MessagesPage() {
     // Sadece iki kullanıcı arasındaki mesajları sil
     await supabase.from("messages")
       .delete()
-      .or(`and(sender_id.eq.${user.id},receiver_id.eq.${partnerId})`, `and(sender_id.eq.${partnerId},receiver_id.eq.${user.id})`);
+      .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
+      .or(`sender_id.eq.${partnerId},receiver_id.eq.${partnerId}`);
     // Local conversations state'inden çıkar
     setConversations(prev => prev.filter(c => c.user_id !== partnerId));
     if (selectedUser && selectedUser.user_id === partnerId) {
@@ -269,6 +335,15 @@ export default function MessagesPage() {
     // Supabase'dan tekrar fetch et
     await fetchConversations(user.id);
   };
+
+  // Kullanıcı giriş yapmamışsa loading göster
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-indigo-50 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-purple-600"></div>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -291,7 +366,7 @@ export default function MessagesPage() {
             </form>
             {searchLoading && <div className="text-xs text-gray-400 mt-1">Aranıyor...</div>}
             {searchResults.length > 0 && (
-              <ul className="bg-white border rounded shadow mt-2 max-h-48 overflow-y-auto z-10 absolute w-72">
+              <ul className="bg-white border rounded shadow mt-2 max-h-48 overflow-y-auto z-5 absolute w-72">
                 {searchResults.map(u => (
                   <li key={u.id}>
                     <button
@@ -398,7 +473,7 @@ function MessageBubble({ msg, isOwn, onDelete }: { msg: any, isOwn: boolean, onD
           )}
         </div>
         {menuOpen && isOwn && (
-          <div className="absolute right-0 top-8 z-30 bg-white border rounded shadow min-w-[120px] text-sm">
+          <div className="absolute right-0 top-8 z-10 bg-white border rounded shadow min-w-[120px] text-sm">
             <button className="block w-full px-4 py-2 text-left hover:bg-gray-100 text-black" onClick={() => { onDelete(msg.id); setMenuOpen(false); }}>Mesajı Sil</button>
           </div>
         )}
@@ -431,7 +506,7 @@ function ConversationRow({ conv, isSelected, onSelect, onDelete }: { conv: any, 
         <span style={{ fontSize: 18, fontWeight: "bold" }}>⋯</span>
       </button>
       {menuOpen && (
-        <div className="absolute right-2 top-12 z-30 bg-white border rounded shadow min-w-[140px] text-sm">
+        <div className="absolute right-2 top-12 z-10 bg-white border rounded shadow min-w-[140px] text-sm">
           <button className="block w-full px-4 py-2 text-left hover:bg-gray-100 text-black" onClick={() => { onDelete(); setMenuOpen(false); }}>Mesajları Sil</button>
         </div>
       )}
