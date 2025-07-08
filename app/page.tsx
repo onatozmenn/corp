@@ -871,6 +871,30 @@ export default function Home() {
     }
   };
 
+  // Kayıt (Sign Up) fonksiyonu
+  const handleSignUp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrors({});
+    setAuthLoading(true);
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email: formData.email,
+        password: formData.password,
+      });
+      if (error) {
+        setErrors({ general: error.message });
+      } else {
+        // Başarılı kayıt sonrası kullanıcıya bilgi ver
+        alert("Kayıt başarılı! Lütfen e-posta adresinizi doğrulayın.");
+        window.location.reload();
+      }
+    } catch (err: any) {
+      setErrors({ general: err.message || "Bir hata oluştu" });
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
   // Input değişikliklerini yakalayan fonksiyon
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
