@@ -61,6 +61,24 @@ interface Comment {
   }
 }
 
+const features = [
+  {
+    title: "Anonim Paylaşım",
+    description: "Deneyimlerini özgürce ve anonim olarak paylaşabilirsin.",
+    icon: Globe,
+  },
+  {
+    title: "Şirket İncelemeleri",
+    description: "Çalıştığın veya başvurduğun şirketler hakkında bilgi al.",
+    icon: Users,
+  },
+  {
+    title: "Puanlama Sistemi",
+    description: "Şirketleri ve pozisyonları puanlayarak topluluğa katkı sağla.",
+    icon: Star,
+  },
+];
+
 export default function Home() {
   const [posts, setPosts] = useState<Post[]>([])
   const [newPost, setNewPost] = useState("")
@@ -988,7 +1006,7 @@ export default function Home() {
             <div className="bg-white rounded-xl shadow-lg p-6 border border-purple-100 flex flex-col items-center">
               <Link href="/profile" className="flex flex-col items-center group cursor-pointer">
                 <img src={profile?.avatar_url || "/placeholder-user.jpg"} alt="Profil Fotoğrafı" className="w-20 h-20 rounded-full object-cover mb-3 border-2 border-purple-200 shadow group-hover:scale-105 transition-transform" />
-                <div className="text-xl font-bold text-gray-900 mb-1 group-hover:text-purple-700 transition-colors">{profile?.username || currentUsername || usersUsername || "Kullanıcı"}</div>
+                <div className="text-xl font-bold text-gray-900 mb-1 group-hover:text-purple-700 transition-colors">{usersUsername || "Kullanıcı"}</div>
               </Link>
               {positionTitle && (
                 <div className="text-sm text-gray-700 mb-1 text-center">{positionTitle}</div>
